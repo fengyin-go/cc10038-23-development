@@ -71,6 +71,27 @@ npm run dev
 | 聚合查询视图 | `aggregation_view` | 聚合视图 | 视图名称、聚合维度、指标定义 |
 | 采集血缘 | `data_lineage` | 血缘关系 | 来源批次、解析规则版本、标准化版本 |
 
+## 归档交付与重放接收
+
+除了通用的模块清单/登记/动作接口，归档与重放另有可重放归档包链路：
+
+- 归档策略页的「执行归档」会把尚未归档批次的原始日志打成归档包；也可以在
+  归档策略页下半部分的交付面板里手工选择批次、命名并生成。
+- 归档包是 NDJSON：首行清单、每行一个分片（批次、原始行号、原始正文、正文摘要、
+  批次+行号+正文的联合校验、字节长度），末行是整包摘要。下载地址
+  `GET /api/archive/packages/{package_id}/download` 可直接交给重放引擎接收。
+- 接收接口 `POST /api/archive/packages/{package_id}/receive` 逐分片核验：
+  只有校验通过的分片才会按「批次 + 原始行号」幂等写入 `raw_records`，
+  重复接收不会重复登记；同批次行号已存在但正文不同会记为冲突并保留原记录。
+- 核验结果同时落到可用文件清单 `GET /api/archive/files`，标明每个批次的
+  可用/部分可用/缺损状态、已登记原始记录 ID 与缺损原文区间。
+- 重放 `POST /api/archive/packages/{package_id}/replay` 只读取通过核验的正文和
+  原始编号。只要存在未核验/校验失败的分片或缺少文件尾，任务就是「局部重放」，
+  返回 `complete_replay=false`，并同时给出已执行批次、跳过批次和各批次缺损区间；
+  修复后重新接收再重放才会变成「整包重放」。
+- 值班人员可通过 `GET /api/archive/replays/{task_id}/sources` 追溯某次重放
+  具体用过的原始正文、原始行号和标准化结果。
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。
